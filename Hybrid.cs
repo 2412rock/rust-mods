@@ -30,7 +30,7 @@ namespace Oxide.Plugins
         private const bool defaultPvP = true;
 
         // Time restriction (1 week)
-        private readonly TimeSpan switchCooldown = TimeSpan.FromDays(7);
+        private readonly TimeSpan switchCooldown = TimeSpan.FromDays(5);
 
         // File path for saving data
         private string dataFilePath;
@@ -56,7 +56,7 @@ namespace Oxide.Plugins
             else
             {
                 TimeSpan remainingTime = switchCooldown - (DateTime.Now - playerData[player.userID].LastSwitchTime);
-                player.ChatMessage($"You can only switch modes once a week. Try again in {remainingTime.Days} days and {remainingTime.Hours} hours.");
+                player.ChatMessage($"You can only switch modes once every 5 days. Try again in {remainingTime.Days} days and {remainingTime.Hours} hours.");
             }
         }
 
@@ -92,10 +92,13 @@ namespace Oxide.Plugins
         }
 
         // Check if the player can switch their mode
-        private bool CanSwitch(BasePlayer player)
+         private bool CanSwitch(BasePlayer player)
         {
             // If player has never switched, allow switching
-            return true;
+            if (!playerData.ContainsKey(player.userID)) return true;
+
+            // If a week has passed since last switch, allow switching
+            return DateTime.Now - playerData[player.userID].LastSwitchTime >= switchCooldown;
         }
 
         // Called when a player takes damage
@@ -120,15 +123,40 @@ namespace Oxide.Plugins
         //     return playerData.ContainsKey(player.userID) && playerData[player.userID].IsPvE;
         // }
 
-        // // Called when a player joins
-        // private void OnPlayerInit(BasePlayer player)
-        // {
-        //     // Set player to PvP by default when they join
-        //     if (!playerData.ContainsKey(player.userID))
-        //     {
-        //         playerData[player.userID] = new PlayerData { IsPvE = defaultPvP, LastSwitchTime = DateTime.MinValue };
-        //     }
-        // }
+        private void OnServerInitialized()
+        {
+            timer.Every(900f, () => BroadcastMessage("Type /help to get a list of server commands"));
+        }
+
+        [ChatCommand("help")]
+        void TestCommand(BasePlayer player, string command, string[] args)
+        {
+            // Send a reply to the player
+            player.ChatMessage("Commands: \n /pve - Sets the playmode to pve \n /pvp - Sets the playmode to pvp \n /shop - opens the shop menu \n /kit - opens the kits menu");
+        }
+
+        private void BroadcastMessage(string message)
+        {
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                player.ChatMessage(message);
+            }
+        }
+ 
+        void OnPlayerConnected(BasePlayer player)
+        {
+            player.ChatMessage("Welcome! Type /help to get a list of server commands");
+        }
+
+        // Called when a player joins
+        private void OnPlayerInit(BasePlayer player)
+        {
+            // Set player to PvP by default when they join
+            if (!playerData.ContainsKey(player.userID))
+            {
+                playerData[player.userID] = new PlayerData { IsPvE = true, LastSwitchTime = DateTime.MinValue };
+            }
+        }
 
 
         private bool UserIdIsPvE(ulong userID)
