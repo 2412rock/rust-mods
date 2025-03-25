@@ -30,10 +30,11 @@ namespace Oxide.Plugins
         private const bool defaultPvP = true;
 
         // Time restriction (1 week)
-        private readonly TimeSpan switchCooldown = TimeSpan.FromDays(5);
+        private readonly TimeSpan switchCooldown = TimeSpan.FromDays(4);
 
         // File path for saving data
         private string dataFilePath;
+        private readonly TimeSpan offlineToPvP = TimeSpan.FromHours(25);
 
         // Called when the plugin is loaded
         private void Init()
@@ -41,6 +42,36 @@ namespace Oxide.Plugins
             dataFilePath = Path.Combine(Interface.Oxide.DataDirectory, "pve_pvp_data.json"); // Use Oxide's DataDirectory
             LoadData(); // Load the saved data
             Puts("PvE/PvP Weekly Choice plugin loaded.");
+            timer.Every(100f, CheckOfflinePlayers);
+        }
+
+        private void CheckOfflinePlayers()
+        {
+            DateTime now = DateTime.Now;
+            foreach (var entry in playerData)
+            {
+                if (entry.Value.IsPvE && (now - entry.Value.LastLogin) > offlineToPvP)
+                {
+                    entry.Value.IsPvE = false;
+                    Puts($"Player {entry.Key} has been switched to PvP due to inactivity.");
+                }
+            }
+            SaveData();
+        }
+
+        void OnPlayerDisconnected(BasePlayer player, string reason)
+        {
+            if (playerData.ContainsKey(player.userID))
+            {
+                playerData[player.userID].LastLogin = DateTime.Now; // Update the LastLogin time when player disconnects
+                SaveData(); // Save the data to file after updating
+            }
+            else
+            {
+                playerData[player.userID] = new PlayerData { LastLogin = DateTime.Now }; // Create new entry if it doesn't exist
+                SaveData();
+            }
+            Puts($"Player {player.displayName} disconnected. LastLogin updated.");
         }
 
         // Command to switch to PvE
@@ -56,7 +87,7 @@ namespace Oxide.Plugins
             else
             {
                 TimeSpan remainingTime = switchCooldown - (DateTime.Now - playerData[player.userID].LastSwitchTime);
-                player.ChatMessage($"You can only switch modes once every 5 days. Try again in {remainingTime.Days} days and {remainingTime.Hours} hours.");
+                player.ChatMessage($"You can only switch modes once every 4 days. Try again in {remainingTime.Days} days and {remainingTime.Hours} hours.");
             }
         }
 
@@ -92,7 +123,7 @@ namespace Oxide.Plugins
         }
 
         // Check if the player can switch their mode
-         private bool CanSwitch(BasePlayer player)
+        private bool CanSwitch(BasePlayer player)
         {
             // If player has never switched, allow switching
             if (!playerData.ContainsKey(player.userID)) return true;
@@ -100,28 +131,6 @@ namespace Oxide.Plugins
             // If a week has passed since last switch, allow switching
             return DateTime.Now - playerData[player.userID].LastSwitchTime >= switchCooldown;
         }
-
-        // Called when a player takes damage
-        // private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitInfo)
-        // {
-        //     if (entity is BasePlayer player && IsPvE(player))
-        //     {
-        //         // Prevent damage in PvE mode
-        //         hitInfo.damageTypes = new DamageTypeList(); // Clears the damage types
-        //         hitInfo.HitMaterial = 0; // Ensures no environmental damage is applied
-        //         hitInfo.DoHitEffects = false; // Stops the hit effects
-        //         hitInfo.Initiator = null; // Nullifies the initiator to prevent damage application
-        //         hitInfo.HitPositionWorld = Vector3.zero; // Prevents any impact from being registered
-        //         return false; // Prevents further damage processing
-        //     }
-        //     return null;
-        // }
-
-        // // Check if player is in PvE mode
-        // private bool IsPvE(BasePlayer player)
-        // {
-        //     return playerData.ContainsKey(player.userID) && playerData[player.userID].IsPvE;
-        // }
 
         private void OnServerInitialized()
         {
@@ -142,7 +151,7 @@ namespace Oxide.Plugins
                 player.ChatMessage(message);
             }
         }
- 
+
         void OnPlayerConnected(BasePlayer player)
         {
             player.ChatMessage("Welcome! Type /help to get a list of server commands");
@@ -154,7 +163,7 @@ namespace Oxide.Plugins
             // Set player to PvP by default when they join
             if (!playerData.ContainsKey(player.userID))
             {
-                playerData[player.userID] = new PlayerData { IsPvE = true, LastSwitchTime = DateTime.MinValue };
+                playerData[player.userID] = new PlayerData { IsPvE = true, LastSwitchTime = DateTime.MinValue, LastLogin = DateTime.Now };
             }
         }
 
@@ -192,20 +201,20 @@ namespace Oxide.Plugins
                     // Prevent PvE players from damaging PvP players
                     if (isAttackerPvE && !isTargetPvE)
                     {
-                        attackerPlayer.ChatMessage("You cannot attack PvP players while in PvE mode.");
+                        attackerPlayer.ChatMessage("Cannot attack player");
                         return true; // Block the damage
                     }
 
                     // Prevent PvE players from damaging each other
                     if (isAttackerPvE && isTargetPvE)
                     {
-                        attackerPlayer.ChatMessage("PvE players cannot attack each other.");
+                        attackerPlayer.ChatMessage("Cannot attack player");
                         return true; // Block the damage
                     }
                     // Prevent pvp players from damaging pve
                     if (!isAttackerPvE && isTargetPvE)
                     {
-                        attackerPlayer.ChatMessage("PvP players cannot attack each other.");
+                        attackerPlayer.ChatMessage("Cannot attack player");
                         return true; // Block the damage
                     }
                 }
@@ -265,6 +274,7 @@ namespace Oxide.Plugins
         {
             public bool IsPvE { get; set; }
             public DateTime LastSwitchTime { get; set; }
+            public DateTime LastLogin { get; set; }
         }
     }
 }
